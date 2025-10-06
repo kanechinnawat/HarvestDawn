@@ -9,7 +9,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
     
     <style>
-        /* CSS ทั้งหมดเหมือนเดิม ไม่มีการเปลี่ยนแปลง */
         body { font-family: 'Sarabun', sans-serif; background-color: #f4f7f6; color: #333; margin: 0; overflow: hidden; }
         .container { display: flex; flex-direction: column; height: 100vh; }
         .main-content { display: flex; flex: 1; position: relative; }
@@ -26,34 +25,27 @@
         .result-card { border: 1px solid #ddd; border-left: 5px solid #4CAF50; padding: 15px; margin-bottom: 15px; border-radius: 5px; background-color: #fafafa; }
         .result-card.low-score { border-left-color: #f4b400; }
         .reasons { color: #d9534f; font-size: 0.9em; }
-        /* เพิ่มสไตล์สำหรับ Popup ของ Leaflet เล็กน้อย */
-        .leaflet-popup-content-wrapper { border-radius: 5px; }
-        .leaflet-popup-content { font-family: 'Sarabun', sans-serif; }
     </style>
-    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
         <div class="main-content">
-            <div class="map-container">
-                <div id="map"></div>
-            </div>
+            <div class="map-container"><div id="map"></div></div>
 
             <div class="results-panel" id="resultsPanel">
-                 {% if recommendations %}
+                {% if recommendations %}
                     <h2>ผลการวิเคราะห์</h2>
-                    <p>สำหรับพื้นที่ที่คุณเลือก ระบบจำลองคุณลักษณะได้ดังนี้:</p>
                     <div class="info-box">
                         <div><strong>ชนิดดิน:</strong> {{ input_data.soil_type }}</div>
-                        <div><strong>ปริมาณฝน:</strong> {{ "%.0f"|format(input_data.avg_rainfall_mm) }} มม./ปี</div>
+                        <div><strong>ฝน:</strong> {{ "%.0f"|format(input_data.avg_rainfall_mm) }} มม.</div>
                         <div><strong>อุณหภูมิ:</strong> {{ "%.0f"|format(input_data.avg_temp_celsius) }} °C</div>
-                        <div><strong>ความลาดชัน:</strong> {{ "%.0f"|format(input_data.slope_degree) }}°</div>
+                        <div><strong>ลาดชัน:</strong> {{ "%.0f"|format(input_data.slope_degree) }}°</div>
                     </div>
                     {% for rec in recommendations %}
                     <div class="result-card {% if rec.suitability_score < 3 %}low-score{% endif %}">
                         <h3>{{ loop.index }}. {{ rec.crop_name }}</h3>
-                        <p><strong>คะแนนความเหมาะสม:</strong> {{ rec.suitability_score }} / {{ rec.max_score }}</p>
-                        <p><strong>แนวโน้มราคาตลาด:</strong> {{ rec.market_trend }}</p>
+                        <p><strong>คะแนน:</strong> {{ rec.suitability_score }} / {{ rec.max_score }}</p>
+                        <p><strong>แนวโน้ม:</strong> {{ rec.market_trend }}</p>
                         {% if rec.reasons_for_low_score %}
                             <p class="reasons"><strong>ข้อควรพิจารณา:</strong> {{ rec.reasons_for_low_score | join(', ') }}</p>
                         {% endif %}
@@ -61,16 +53,11 @@
                     {% endfor %}
                 {% else %}
                     <h3>ยินดีต้อนรับสู่ Harvest Dawn</h3>
-                    <p>ขั้นตอนการใช้งาน:</p>
-                    <ol>
-                        <li>ใช้เมนูมุมขวาบนเพื่อสลับมุมมองแผนที่ความสูง</li>
-                        <li>คลิกบนแผนที่เพื่อดูค่าความสูง (จำลอง)</li>
-                        <li>ใช้เครื่องมือวาดรูป (มุมซ้ายบน) เพื่อวาดขอบเขตพื้นที่</li>
-                        <li>กดปุ่ม "วิเคราะห์พื้นที่" เพื่อรับคำแนะนำ</li>
-                    </ol>
+                    <p>1. ใช้เครื่องมือวาดพื้นที่</p>
+                    <p>2. กด “วิเคราะห์พื้นที่” เพื่อรับคำแนะนำ</p>
                 {% endif %}
             </div>
-            
+
             <div class="form-container">
                 <form action="/" method="POST" id="mapForm">
                     <input type="hidden" name="polygon_coords" id="polygon_coords">
@@ -80,96 +67,33 @@
         </div>
     </div>
 
+    <!-- ฝังค่า has_recommendations เป็น JSON แยกต่างหาก -->
+    <script id="hasRecsData" type="application/json">{{ has_recommendations | tojson }}</script>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-    
     <script>
-        // === 1. ส่วนกำหนดค่าแผนที่ (Map Initialization) ===
         const map = L.map('map').setView([13.75, 100.5], 6);
+        const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+        L.control.layers({ "แผนที่ปกติ": osm, "แผนที่ภูมิประเทศ": topo }).addTo(map);
 
-        // === 2. ส่วนกำหนดชั้นข้อมูลแผนที่ (Tile Layer Definitions) ===
-        // แผนที่ปกติ (OpenStreetMap)
-        const osmMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        });
-        
-        // (ใหม่) แผนที่ความสูง (OpenTopoMap)
-        const topoMap = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-            attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
-        });
+        const drawn = new L.FeatureGroup().addTo(map);
+        new L.Control.Draw({ draw: { polygon: true, rectangle: true, marker: false }, edit: { featureGroup: drawn } }).addTo(map);
 
-        // กำหนดให้แผนที่ปกติเป็นค่าเริ่มต้น
-        osmMap.addTo(map);
-
-        // === 3. (ใหม่) ส่วนควบคุมการสลับชั้นข้อมูล (Layer Control) ===
-        const baseMaps = {
-            "แผนที่ปกติ": osmMap,
-            "แผนที่ความสูง": topoMap
-        };
-        L.control.layers(baseMaps).addTo(map);
-
-        // === 4. ส่วนควบคุมการวาด (Draw Control) ===
-        const drawnItems = new L.FeatureGroup();
-        map.addLayer(drawnItems);
-
-        const drawControl = new L.Control.Draw({
-            draw: { polygon: true, rectangle: true, polyline: false, circle: false, marker: false, circlemarker: false },
-            edit: { featureGroup: drawnItems }
-        });
-        map.addControl(drawControl);
-        
         const analyzeBtn = document.getElementById('analyzeBtn');
         const coordsInput = document.getElementById('polygon_coords');
-
-        map.on(L.Draw.Event.CREATED, function (event) {
-            const layer = event.layer;
-            drawnItems.clearLayers();
-            drawnItems.addLayer(layer);
-            const geoJSON = layer.toGeoJSON();
-            coordsInput.value = JSON.stringify(geoJSON);
+        map.on(L.Draw.Event.CREATED, e => {
+            drawn.clearLayers();
+            drawn.addLayer(e.layer);
+            coordsInput.value = JSON.stringify(e.layer.toGeoJSON());
             analyzeBtn.disabled = false;
         });
-        
-        map.on('draw:edited', function (e) {
-            e.layers.eachLayer(function (layer) {
-                const geoJSON = layer.toGeoJSON();
-                coordsInput.value = JSON.stringify(geoJSON);
-            });
-        });
-        
-        // === 5. (ใหม่) ส่วนจำลองการคลิกเพื่อดูค่าความสูง (Click for Elevation Simulation) ===
-        map.on('click', function(e) {
-            // สุ่มค่าความสูงระหว่าง 10 ถึง 500 เมตร
-            const randomElevation = (10 + Math.random() * 500).toFixed(2);
-            const lat = e.latlng.lat.toFixed(5);
-            const lng = e.latlng.lng.toFixed(5);
 
-            const popupContent = `
-                <b>ตำแหน่ง:</b> ${lat}, ${lng}<br>
-                <b>ความสูง (จำลอง):</b> ${randomElevation} เมตร
-            `;
-
-            // แสดง Popup ณ จุดที่คลิก
-            L.popup()
-                .setLatLng(e.latlng)
-                .setContent(popupContent)
-                .openOn(map);
-        });
-
-        // === 6. ส่วนควบคุมการแสดงผล Panel (เหมือนเดิม) ===
         const resultsPanel = document.getElementById('resultsPanel');
-        let isPanelOpened = false;
-        const hasRecommendations = { has_recommendations,tojson };
-        if (hasRecommendations) {
-            resultsPanel.classList.add('open');
-            isPanelOpened = true;
-        }
-        map.on('dragstart', function() {
-            if (!isPanelOpened) {
-                resultsPanel.classList.add('open');
-                isPanelOpened = true; 
-            }
-        });
+        // อ่านค่าจาก JSON script เพื่อเลี่ยงการ lint ผิดพลาดใน VS Code
+        const hasRecommendations = JSON.parse(document.getElementById('hasRecsData').textContent || 'false');
+        if (hasRecommendations) resultsPanel.classList.add('open');
     </script>
 </body>
 </html>
