@@ -4,7 +4,12 @@
     {
       "src": "api/index.py",
       "use": "@vercel/python",
-      "config": { "maxLambdaSize": "45mb" }
+      "config": {
+        "maxLambdaSize": "45mb",
+        "includeFiles": [
+          "crop_requirement.csv"
+        ]
+      }
     }
   ],
   "routes": [
