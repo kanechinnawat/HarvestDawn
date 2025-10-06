@@ -159,7 +159,7 @@
         // === 6. ส่วนควบคุมการแสดงผล Panel (เหมือนเดิม) ===
         const resultsPanel = document.getElementById('resultsPanel');
         let isPanelOpened = false;
-        const hasRecommendations = {{ has_recommendations|tojson }};
+        const hasRecommendations = { has_recommendations,tojson };
         if (hasRecommendations) {
             resultsPanel.classList.add('open');
             isPanelOpened = true;
