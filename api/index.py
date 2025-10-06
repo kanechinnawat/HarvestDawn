@@ -56,7 +56,7 @@ IMPROVEMENT_TIPS = [
 ]
 
 def mock_env_from_polygon(geojson_str: str | None) -> Dict[str, Any]:
-    """จำลองสภาพแวดล้อมจาก polygon; มี seed เพื่อให้สุ่มคงที่ในแต่ละพื้นที่"""
+    """จำลองสภาพแวดล้อมจาก polygon; seed ทำให้แต่ละพื้นที่สุ่มแบบคงที่"""
     seed = hash(geojson_str or "") & 0xFFFFFFFF
     rng = random.Random(seed)
     soil_types = ["ดินร่วน", "ดินร่วนปนทราย", "ดินเหนียว", "ดินทราย"]
@@ -69,18 +69,16 @@ def mock_env_from_polygon(geojson_str: str | None) -> Dict[str, Any]:
     }
 
 def _choose_trend(existing: str | None, rng: random.Random) -> str:
-    """สุ่มแนวโน้มราคา (ให้ 'เพิ่มขึ้น' โผล่บ่อยขึ้นเล็กน้อย)"""
+    """สุ่มแนวโน้มราคา (ให้น้ำหนัก “เพิ่มขึ้น” สูงขึ้นเล็กน้อย)"""
     pool = ["คงที่"]*2 + ["เพิ่มขึ้น"]*3 + ["เพิ่มขึ้นเล็กน้อย"]*2 + ["ผันผวน"]*2 + ["ปรับตัวลดลงเล็กน้อย"]
     if not existing or existing.strip() == "" or rng.random() < 0.6:
         return rng.choice(pool)
     return str(existing)
 
 def _gen_advice_by_band(env: Dict[str, Any], reasons: List[str], score: int, rng: random.Random) -> str:
-    """คำแนะนำให้สัมพันธ์กับย่านคะแนน"""
-    rain = env["avg_rainfall_mm"]
-    temp = env["avg_temp_celsius"]
-    slope = env["slope_degree"]
-    soil = env["soil_type"]
+    """คำแนะนำสัมพันธ์กับย่านคะแนน"""
+    rain = env["avg_rainfall_mm"]; temp = env["avg_temp_celsius"]
+    slope = env["slope_degree"]; soil = env["soil_type"]
 
     if score >= 5:
         base = rng.choice(POSITIVE_TIPS)
@@ -91,16 +89,12 @@ def _gen_advice_by_band(env: Dict[str, Any], reasons: List[str], score: int, rng
             f"ชนิดดิน: {soil}",
         ])
         return f"{base} | {extra}"
-
     if 3 <= score <= 4:
         seg1 = "โดยรวมเหมาะสม แต่ยังมีประเด็นที่ควรเฝ้าระวังเล็กน้อย"
         seg2 = rng.choice(POSITIVE_TIPS)
         return f"{seg1} | {seg2}"
-
-    # 0-2 คะแนน: เน้นข้อควรปรับปรุง
-    picked = reasons[:]
-    if not picked:
-        picked = [rng.choice(IMPROVEMENT_TIPS)]
+    # 0–2: เน้นข้อควรปรับปรุง
+    picked = reasons[:] or [rng.choice(IMPROVEMENT_TIPS)]
     improve = rng.choice(IMPROVEMENT_TIPS)
     return "ข้อควรปรับปรุง: " + " ; ".join(picked) + f" | แนวทาง: {improve}"
 
@@ -113,8 +107,7 @@ def _deterministic_score(row: pd.Series, env: Dict[str, Any]) -> Tuple[int, List
     max_temp = row.get("max_temp_c") or row.get("อุณหภูมิสูงสุด") or None
     slope_max = row.get("slope_max_deg") or row.get("ความลาดสูงสุด") or None
 
-    score = 0
-    reasons: List[str] = []
+    score = 0; reasons: List[str] = []
 
     # Soil
     if wanted_soil:
@@ -158,29 +151,20 @@ def _deterministic_score(row: pd.Series, env: Dict[str, Any]) -> Tuple[int, List
     return score, reasons
 
 def score_row(row: pd.Series, env: Dict[str, Any]) -> Dict[str, Any]:
-    """สรุปผลคะแนน + สุ่มปรับ (jitter) + คำแนะนำที่สอดคล้องคะแนน"""
+    """สรุปผลคะแนน + jitter + คำแนะนำ"""
     name = row.get("crop_name") or row.get("name") or row.get("พืช") or "Unknown Crop"
-
-    # rng ที่ผูกกับพื้นที่ + ชื่อพืช เพื่อให้สุ่มคงที่ตาม polygon
     local_seed = (env.get("seed", 0) ^ (hash(str(name)) & 0xFFFFFFFF)) & 0xFFFFFFFF
     rng = random.Random(local_seed)
 
     base_score, reasons = _deterministic_score(row, env)
 
-    # Jitter: ปรับคะแนนรอบ ๆ base ให้มีความหลากหลาย แต่ยังสมเหตุผล
-    candidates = [
-        max(0, base_score - 2),
-        max(0, base_score - 1),
-        base_score,
-        min(5, base_score + 1),
-    ]
-    weights = [1, 3, 4, 2]  # โอกาสได้ใกล้ base มากที่สุด
+    # Jitter รอบ ๆ base
+    candidates = [max(0, base_score - 2), max(0, base_score - 1), base_score, min(5, base_score + 1)]
+    weights = [1, 3, 4, 2]
     final_score = rng.choices(candidates, weights=weights, k=1)[0]
 
-    # แนวโน้มราคา (สุ่มแบบมีน้ำหนัก)
     trend_raw = row.get("market_trend") or row.get("trend") or row.get("แนวโน้มราคา") or None
     trend = _choose_trend(trend_raw, rng)
-
     advice = _gen_advice_by_band(env, reasons, final_score, rng)
 
     return {
@@ -191,6 +175,31 @@ def score_row(row: pd.Series, env: Dict[str, Any]) -> Dict[str, Any]:
         "reasons_for_low_score": reasons,
         "advice": advice,
     }
+
+def _enforce_score_coverage(scored: List[Dict[str, Any]], env: Dict[str, Any]) -> None:
+    """บังคับให้มีคะแนน 1..5 อย่างน้อยอย่างละ 1 (ถ้าจำนวนรายการ >= 5)
+       จะเลือกปรับรายการที่ 'ใกล้' คะแนนเป้าหมายที่สุด แล้วอัปเดตคำแนะนำให้ตรงย่านคะแนน
+    """
+    if len(scored) < 5:
+        return
+    rng = random.Random(env.get("seed", 0))
+    targets = [5, 4, 3, 2, 1]
+
+    present = {d["suitability_score"] for d in scored}
+    available_idxs = list(range(len(scored)))
+    rng.shuffle(available_idxs)
+
+    for t in targets:
+        if t in present:
+            continue
+        # หา index ที่คะแนนปัจจุบันใกล้ t ที่สุด
+        best_idx = min(available_idxs, key=lambda i: abs(scored[i]["suitability_score"] - t))
+        available_idxs.remove(best_idx)
+        # ปรับคะแนน + คำแนะนำให้สอดคล้อง
+        scored[best_idx]["suitability_score"] = t
+        reasons = scored[best_idx].get("reasons_for_low_score", [])
+        scored[best_idx]["advice"] = _gen_advice_by_band(env, reasons, t, rng)
+        present.add(t)
 
 def build_recommendations(env: Dict[str, Any]) -> List[Dict[str, Any]]:
     if CROP_DB.empty:
@@ -205,6 +214,11 @@ def build_recommendations(env: Dict[str, Any]) -> List[Dict[str, Any]]:
         rows = CROP_DB.to_dict(orient="records")
 
     scored = [score_row(pd.Series(r), env) for r in rows]
+
+    # บังคับให้มีครบ 5,4,3,2,1 อย่างน้อยอย่างละหนึ่ง
+    _enforce_score_coverage(scored, env)
+
+    # เรียงจากมากไปน้อย และแสดงทั้งหมด
     scored.sort(key=lambda d: d["suitability_score"], reverse=True)
     return scored
 
@@ -219,13 +233,7 @@ def index():
         polygon = request.form.get("polygon_coords")
         env = mock_env_from_polygon(polygon)
         recs = build_recommendations(env)
-        return render_template(
-            "index.html",
-            recommendations=recs,
-            input_data=env,
-            has_recommendations=True,
-        )
-    # GET
+        return render_template("index.html", recommendations=recs, input_data=env, has_recommendations=True)
     return render_template(
         "index.html",
         recommendations=None,

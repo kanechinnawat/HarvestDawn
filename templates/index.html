@@ -4,27 +4,37 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Harvest Dawn - Elevation Map</title>
-
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
-
   <style>
-    body { font-family: 'Sarabun', sans-serif; background: #f4f7f6; color:#333; margin:0; overflow:hidden; }
+    body { font-family: 'Sarabun', sans-serif; background:#f4f7f6; color:#333; margin:0; overflow:hidden; }
     .container { display:flex; flex-direction:column; height:100vh; }
     .main-content { display:flex; flex:1; position:relative; }
     .map-container { flex:1; height:100%; }
     #map { width:100%; height:100%; }
-    .results-panel { position:absolute; right:0; top:0; height:100%; width:480px; background:#fff; padding:20px; box-sizing:border-box; overflow-y:auto; box-shadow:-4px 0 8px rgba(0,0,0,.1); transition:.4s; transform:translateX(100%); z-index:1000; }
+
+    .results-panel { position:absolute; right:0; top:0; height:100%; width:480px; background:#fff; padding:20px;
+      box-sizing:border-box; overflow-y:auto; box-shadow:-4px 0 8px rgba(0,0,0,.1); transition:.4s; transform:translateX(100%);
+      z-index:1000; }
     .results-panel.open { transform:translateX(0); }
-    .form-container { position:absolute; top:20px; left:50%; transform:translateX(-50%); z-index:1001; background:#fff; padding:14px; border-radius:6px; box-shadow:0 2px 5px rgba(0,0,0,.15);}
-    button { padding:10px 14px; background:#4CAF50; color:#fff; border:0; border-radius:6px; cursor:pointer; }
-    button[disabled] { background:#bbb; cursor:not-allowed; }
-    h2,h3 { color:#2c5d3c; }
-    .info-box { background:#e9f5e9; padding:14px; border-radius:6px; margin-bottom:16px; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-    .result-card { border:1px solid #e5e7eb; border-left:5px solid #4CAF50; padding:14px; margin-bottom:14px; border-radius:6px; background:#fafafa; }
-    .result-card.low-score { border-left-color:#f4b400; }
-    .advice { color:#0f5132; background:#d1e7dd; padding:8px 10px; border-radius:6px; margin-top:8px; font-size:.95em; }
-    .reasons { color:#b02a37; font-size:.9em; margin-top:6px; }
+
+    .form-container { position:absolute; top:20px; left:50%; transform:translateX(-50%); z-index:1001;
+      background:#fff; padding:15px; border-radius:6px; box-shadow:0 2px 5px rgba(0,0,0,.2); }
+    button { padding:10px 15px; background:#4CAF50; color:#fff; border:none; border-radius:4px; cursor:pointer; }
+    button:disabled { background:#ccc; cursor:not-allowed; }
+
+    h1,h2,h3 { color:#2c5d3c; }
+    .info-box { background:#e9f5e9; padding:15px; border-radius:6px; margin-bottom:20px; display:grid;
+      grid-template-columns:1fr 1fr; gap:10px; }
+
+    .result-card { border:1px solid #ddd; padding:15px; margin-bottom:16px; border-radius:6px; background:#fafafa;
+      border-left:6px solid #4CAF50; } /* default green */
+    .result-card.score-yellow { border-left-color:#f4b400; background:#fffaf0; }
+    .result-card.score-red    { border-left-color:#d9534f; background:#fff5f5; }
+    .reasons { color:#d9534f; font-size:.92em; }
+    .advice { color:#2c3e50; font-size:.95em; margin-top:6px; background:#e8f5e9; padding:10px; border-radius:6px; }
+    .result-card.score-yellow .advice { background:#fff6db; }
+    .result-card.score-red .advice    { background:#ffe5e5; }
   </style>
 </head>
 <body>
@@ -43,15 +53,14 @@
           </div>
 
           {% for rec in recommendations %}
-          <div class="result-card {% if rec.suitability_score < 3 %}low-score{% endif %}">
+          <div class="result-card
+            {% if rec.suitability_score <= 2 %}score-red
+            {% elif rec.suitability_score == 3 %}score-yellow
+            {% else %}score-green{% endif %}">
             <h3>{{ loop.index }}. {{ rec.crop_name }}</h3>
             <p><strong>คะแนน:</strong> {{ rec.suitability_score }} / {{ rec.max_score }}</p>
             <p><strong>แนวโน้มราคา:</strong> {{ rec.market_trend }}</p>
-
-            {% if rec.advice %}
-              <div class="advice"><strong>คำแนะนำเพิ่มเติม:</strong> {{ rec.advice }}</div>
-            {% endif %}
-
+            <p class="advice"><strong>คำแนะนำเพิ่มเติม:</strong> {{ rec.advice }}</p>
             {% if rec.reasons_for_low_score %}
               <p class="reasons"><strong>ข้อควรพิจารณา:</strong> {{ rec.reasons_for_low_score | join(', ') }}</p>
             {% endif %}
@@ -59,8 +68,8 @@
           {% endfor %}
         {% else %}
           <h3>ยินดีต้อนรับสู่ Harvest Dawn</h3>
-          <p>1) วาดขอบเขตพื้นที่บนแผนที่</p>
-          <p>2) กด “วิเคราะห์พื้นที่” เพื่อดูผลลัพธ์</p>
+          <p>1. ใช้เครื่องมือ “ลากเส้น” หรือ “สี่เหลี่ยม” เพื่อกำหนดพื้นที่</p>
+          <p>2. กด “วิเคราะห์พื้นที่” เพื่อรับคำแนะนำ</p>
         {% endif %}
       </div>
 
@@ -73,24 +82,27 @@
     </div>
   </div>
 
-  <!-- ฝังค่า has_recommendations เป็น JSON แยกต่างหาก -->
+  <!-- ฝังค่า has_recommendations -->
   <script id="hasRecsData" type="application/json">{{ has_recommendations | tojson }}</script>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
   <script>
     const map = L.map('map').setView([13.75, 100.5], 6);
-    const osm  = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
     L.control.layers({ "แผนที่ปกติ": osm, "แผนที่ภูมิประเทศ": topo }).addTo(map);
 
+    // เครื่องมือ: polyline + rectangle เท่านั้น
     const drawn = new L.FeatureGroup().addTo(map);
-    new L.Control.Draw({
-      draw: { polygon:true, rectangle:true, marker:false, circle:false, circlemarker:false, polyline:false },
+    const drawControl = new L.Control.Draw({
+      draw: { polyline: {shapeOptions:{weight:3}}, rectangle:{shapeOptions:{weight:2}},
+              polygon:false, circle:false, marker:false, circlemarker:false },
       edit: { featureGroup: drawn }
-    }).addTo(map);
+    });
+    map.addControl(drawControl);
 
-    const analyzeBtn  = document.getElementById('analyzeBtn');
+    const analyzeBtn = document.getElementById('analyzeBtn');
     const coordsInput = document.getElementById('polygon_coords');
     map.on(L.Draw.Event.CREATED, e => {
       drawn.clearLayers();
